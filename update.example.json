@@ -1,0 +1,15 @@
+{
+  "versionCode": 101,
+  "versionName": "1.0.1",
+  "apkUrl": "https://github.com/OWNER/REPO/releases/latest/download/paiwand.apk",
+  "releasePage": "https://github.com/OWNER/REPO/releases/latest",
+  "sizeBytes": 8421376,
+  "sha256": "",
+  "mandatory": false,
+  "requiresReinstall": false,
+  "changelog": [
+    "Floating bubble reads the screen and translates it",
+    "Cleaner result card",
+    "Faster startup"
+  ]
+}
