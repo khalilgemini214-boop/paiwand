@@ -72,8 +72,9 @@ class TranslateCard(private val context: Context) {
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = (anchorX - width / 2).coerceIn(dp(8), max(dp(8), screen.widthPixels - width - dp(8)))
-            y = anchorY + dp(52)
+            this.x = (anchorX - width / 2)
+                .coerceIn(dp(8), max(dp(8), screen.widthPixels - width - dp(8)))
+            this.y = anchorY + dp(52)
         }
 
         container.setOnTouchListener { _, event ->
