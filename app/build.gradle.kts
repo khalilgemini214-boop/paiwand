@@ -34,6 +34,11 @@ android {
         buildConfigField("String", "RELEASE_PAGE", "\"$releasePage\"")
         buildConfigField("String", "DEFAULT_API_BASE", "\"https://api.deepseek.com/v1\"")
         buildConfigField("String", "DEFAULT_MODEL", "\"deepseek-chat\"")
+
+        ndk {
+            // ML Kit ships a ~10 MB OCR engine per architecture. Real phones are ARM only.
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+        }
     }
 
     signingConfigs {
@@ -52,9 +57,14 @@ android {
             if (ciKeystore.isNotEmpty()) signingConfig = signingConfigs.getByName("ci")
         }
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            if (ciKeystore.isNotEmpty()) signingConfig = signingConfigs.getByName("ci")
+            signingConfig = if (ciKeystore.isNotEmpty()) {
+                signingConfigs.getByName("ci")
+            } else {
+                signingConfigs.getByName("debug")
+            }
         }
     }
 

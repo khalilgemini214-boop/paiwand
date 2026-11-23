@@ -71,14 +71,14 @@ jobs:
             ARGS="$ARGS -PciKeyAlias=${{ secrets.KEY_ALIAS }}"
             ARGS="$ARGS -PciKeyPassword=${{ secrets.KEY_PASSWORD }}"
           fi
-          gradle assembleDebug $ARGS
+          gradle assembleRelease $ARGS
 
       - name: Package artifacts
         env:
           COMMIT_MSG: ${{ github.event.head_commit.message }}
         run: |
           mkdir -p out
-          cp app/build/outputs/apk/debug/app-debug.apk out/paiwand.apk
+          cp app/build/outputs/apk/release/app-release.apk out/paiwand.apk
           SIZE=$(stat -c%s out/paiwand.apk)
           SHA=$(sha256sum out/paiwand.apk | cut -d' ' -f1)
           jq -n \
