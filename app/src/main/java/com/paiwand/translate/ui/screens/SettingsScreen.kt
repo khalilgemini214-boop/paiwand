@@ -1,5 +1,6 @@
 package com.paiwand.translate.ui.screens
 
+import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -41,12 +42,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.paiwand.translate.BuildConfig
+import com.paiwand.translate.accessibility.TranslateAccessibilityService
 import com.paiwand.translate.ui.AppViewModel
 import com.paiwand.translate.ui.components.DotDivider
 import com.paiwand.translate.ui.components.GradientButton
@@ -62,6 +65,17 @@ fun SettingsScreen(
 ) {
     val settings by vm.settings.collectAsState()
     val update by vm.updateState.collectAsState()
+
+    val context = LocalContext.current
+    val accessibilityOn = TranslateAccessibilityService.isRunning
+    val openAccessibilitySettings: () -> Unit = {
+        runCatching {
+            context.startActivity(
+                Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+        }
+    }
 
     var apiKey by remember { mutableStateOf(settings.apiKey) }
     var apiBase by remember { mutableStateOf(settings.apiBase) }
@@ -219,8 +233,33 @@ fun SettingsScreen(
                 Spacer(Modifier.height(12.dp))
                 DotDivider()
                 Spacer(Modifier.height(12.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            text = "Text targeting",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = if (accessibilityOn) {
+                                "On — drag the bubble onto any word, button or input field"
+                            } else {
+                                "Off — drag only reads the screen, it cannot replace text"
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    TextButton(onClick = openAccessibilitySettings) {
+                        Text(if (accessibilityOn) "Manage" else "Enable")
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                DotDivider()
+                Spacer(Modifier.height(12.dp))
                 Text(
-                    text = "Android asks for two permissions: draw over other apps, and screen capture. Both are needed — nothing is recorded or sent anywhere except the text you translate.",
+                    text = "Android asks for three permissions: draw over other apps, screen capture, and accessibility. Accessibility is what lets Paiwand know which label you dropped the bubble on and write the translation into a text field.",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

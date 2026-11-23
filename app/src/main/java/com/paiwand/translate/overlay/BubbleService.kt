@@ -9,6 +9,7 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
@@ -19,14 +20,18 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.FrameLayout
+import android.widget.Toast
 import androidx.core.content.ContextCompat
 import com.paiwand.translate.MainActivity
 import com.paiwand.translate.R
+import com.paiwand.translate.accessibility.TranslateAccessibilityService
+import com.paiwand.translate.translate.QuickTranslator
 import kotlin.math.abs
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class BubbleService : Service() {
@@ -169,13 +174,15 @@ class BubbleService : Service() {
                     touchX = event.rawX
                     touchY = event.rawY
                     moved = false
+                    view.animate().scaleX(1.12f).scaleY(1.12f).setDuration(120).start()
                     true
                 }
 
                 MotionEvent.ACTION_MOVE -> {
                     val dx = (event.rawX - touchX).toInt()
                     val dy = (event.rawY - touchY).toInt()
-                    if (abs(dx) > 14 || abs(dy) > 14) moved = true
+                    val slop = (12 * density).toInt()
+                    if (abs(dx) > slop || abs(dy) > slop) moved = true
                     params.x = startX + dx
                     params.y = startY + dy
                     runCatching { manager.updateViewLayout(view, params) }
@@ -183,7 +190,18 @@ class BubbleService : Service() {
                 }
 
                 MotionEvent.ACTION_UP -> {
-                    if (!moved) captureScreen()
+                    view.animate().scaleX(1f).scaleY(1f).setDuration(140).start()
+
+                    if (moved) {
+                        val metrics = resources.displayMetrics
+                        val centerX = (params.x + size / 2)
+                            .coerceIn(0, metrics.widthPixels - 1)
+                        val centerY = (params.y + size / 2)
+                            .coerceIn(0, metrics.heightPixels - 1)
+                        handleDrop(centerX, centerY)
+                    } else {
+                        captureScreen()
+                    }
                     true
                 }
 
@@ -198,20 +216,86 @@ class BubbleService : Service() {
         bubbleParams = params
     }
 
+    /**
+     * A drag-release. The element under the bubble wins; if the app hides its accessibility
+     * tree we fall back to reading just the text block under the point with OCR.
+     */
+    private fun handleDrop(x: Int, y: Int) {
+        val target = TranslateAccessibilityService.instance?.targetAt(x, y)
+
+        if (target != null && target.editable && target.text.isNotBlank()) {
+            replaceInPlace(target)
+            return
+        }
+
+        if (target != null && target.text.isNotBlank()) {
+            TranslatePopupActivity.start(this, target.text)
+            return
+        }
+
+        translateRegionAt(x, y)
+    }
+
+    private fun replaceInPlace(target: TranslateAccessibilityService.Target) {
+        scope.launch {
+            try {
+                val result = QuickTranslator.translate(this@BubbleService, target.text)
+                val replaced = TranslateAccessibilityService.instance
+                    ?.replace(target.node, result.text) == true
+
+                toast(
+                    if (replaced) "Replaced with ${result.target.name}"
+                    else "This field does not accept text from other apps"
+                )
+            } catch (e: Exception) {
+                toast(e.message ?: "Translation failed")
+            }
+        }
+    }
+
+    private fun translateRegionAt(x: Int, y: Int) {
+        if (capturing) return
+        capturing = true
+
+        scope.launch {
+            try {
+                val bitmap = captureWithoutBubble()
+                val text = if (bitmap != null) Ocr.readAt(bitmap, x, y) else ""
+                bitmap?.recycle()
+
+                if (text.isBlank()) {
+                    toast("No text under the bubble")
+                } else {
+                    TranslatePopupActivity.start(this@BubbleService, text)
+                }
+            } finally {
+                capturing = false
+            }
+        }
+    }
+
+    private suspend fun captureWithoutBubble(): Bitmap? {
+        bubble?.visibility = View.INVISIBLE
+        delay(140)
+        val bitmap = ScreenCapture.grab()
+        bubble?.visibility = View.VISIBLE
+        return bitmap
+    }
+
+    private fun toast(message: String) {
+        Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+    }
+
     private fun captureScreen() {
         if (capturing) return
         capturing = true
 
         scope.launch {
             try {
-                val bitmap = ScreenCapture.grab()
+                val bitmap = captureWithoutBubble()
                 val text = if (bitmap != null) Ocr.read(bitmap) else ""
                 bitmap?.recycle()
                 TranslatePopupActivity.start(this@BubbleService, text)
-
-                if (text.isBlank()) {
-                    // Nothing readable: still open the card so the user sees why.
-                }
             } finally {
                 capturing = false
             }

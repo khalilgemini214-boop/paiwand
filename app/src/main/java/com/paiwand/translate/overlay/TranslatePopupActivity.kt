@@ -50,12 +50,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.paiwand.translate.PaiwandApp
-import com.paiwand.translate.data.Languages
-import com.paiwand.translate.translate.TranslationEngine
+import com.paiwand.translate.translate.QuickTranslator
 import com.paiwand.translate.ui.components.IconAction
 import com.paiwand.translate.ui.theme.PaiwandTheme
-import kotlinx.coroutines.flow.first
 
 class TranslatePopupActivity : ComponentActivity() {
 
@@ -100,9 +97,7 @@ private fun PopupContent(
     onOpenSettings: () -> Unit
 ) {
     val context = LocalContext.current
-    val app = context.applicationContext as PaiwandApp
     val clipboard = LocalClipboardManager.current
-    val engine = remember { TranslationEngine() }
 
     var result by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -116,21 +111,9 @@ private fun PopupContent(
         }
         busy = true
         try {
-            val settings = app.settings.flow.first()
-            val target = Languages.byCode(settings.targetLang)
-            targetName = target.name
-            if (!settings.configured) {
-                error = "Add your API key in Settings first."
-                return@LaunchedEffect
-            }
-            result = engine.translate(
-                text = original,
-                source = Languages.byCode(settings.sourceLang),
-                target = target,
-                apiKey = settings.apiKey,
-                baseUrl = settings.apiBase,
-                model = settings.model
-            )
+            val translated = QuickTranslator.translate(context, original)
+            targetName = translated.target.name
+            result = translated.text
         } catch (e: Exception) {
             error = e.message ?: "Translation failed"
         } finally {

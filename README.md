@@ -142,16 +142,22 @@ is the floor. Everything else — version check, download, install flow, fallbac
 
 ## 5. The floating bubble
 
-Settings → Magic translate → Floating bubble. Android asks twice:
+Settings → Magic translate → Floating bubble. Android asks three times:
 
 1. **Display over other apps** — needed to draw the bubble.
 2. **Start recording or casting** — this is MediaProjection. It is how the app sees the screen.
+3. **Accessibility** (Settings → Accessibility → Paiwand text targeting) — this is what lets the
+   bubble know *which* element you dropped it on, and write a translation back into a text field.
 
-Then a green bubble sits on the edge. Drag it anywhere. Tap it:
+Then a green bubble sits on the edge.
 
-- frame is captured, ML Kit reads the text on-device,
-- text goes to the model,
-- card slides up with the translation.
+- **Tap** it → reads the whole screen and shows the translation.
+- **Drag and drop** it onto a specific word, button or paragraph → translates only that element.
+- **Drag and drop** it onto an input field that already contains text → the text is translated in
+  place and replaced: Urdu becomes English, English becomes Urdu, decided by the script itself.
+
+If accessibility is off, or the app hides its accessibility tree (Flutter, games), the drop falls
+back to OCR and picks the text block under the bubble.
 
 **Known limitation:** ML Kit's on-device OCR has no Urdu/Arabic-script model. It reads Latin,
 Devanagari, Chinese, Japanese and Korean well; Urdu and Pashto come out empty or garbled. The card

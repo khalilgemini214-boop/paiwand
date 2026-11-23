@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Paiwand</string>
+    <string name="accessibility_label">Paiwand text targeting</string>
+    <string name="accessibility_description">Lets the bubble read the exact word, label or text field under it, and replace text inside another app with its translation. Nothing is stored or sent except the text being translated.</string>
 </resources>
