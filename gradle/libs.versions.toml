@@ -9,6 +9,7 @@ datastore = "1.1.1"
 okhttp = "4.12.0"
 serializationJson = "1.7.3"
 mlkitText = "16.0.1"
+camera = "1.4.0"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
@@ -26,6 +27,9 @@ androidx-datastore-preferences = { module = "androidx.datastore:datastore-prefer
 okhttp = { module = "com.squareup.okhttp3:okhttp", version.ref = "okhttp" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serializationJson" }
 mlkit-text-recognition = { module = "com.google.mlkit:text-recognition", version.ref = "mlkitText" }
+camera-camera2 = { module = "androidx.camera:camera-camera2", version.ref = "camera" }
+camera-lifecycle = { module = "androidx.camera:camera-lifecycle", version.ref = "camera" }
+camera-view = { module = "androidx.camera:camera-view", version.ref = "camera" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

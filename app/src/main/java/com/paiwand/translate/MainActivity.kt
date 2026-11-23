@@ -36,6 +36,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
+import com.paiwand.translate.camera.CameraTranslateActivity
 import com.paiwand.translate.overlay.BubbleService
 import com.paiwand.translate.ui.AppViewModel
 import com.paiwand.translate.ui.screens.SettingsScreen
@@ -164,6 +165,11 @@ private fun AppRoot(vm: AppViewModel) {
             Screen.Home -> TranslateScreen(
                 vm = vm,
                 onOpenSettings = { screen = Screen.Settings },
+                onOpenCamera = {
+                    context.startActivity(
+                        Intent(context, CameraTranslateActivity::class.java)
+                    )
+                },
                 hasUpdate = update.visible
             )
 

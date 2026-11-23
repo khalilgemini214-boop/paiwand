@@ -32,6 +32,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.PhotoCamera
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.SwapVert
 import androidx.compose.material3.Icon
@@ -68,6 +69,7 @@ import com.paiwand.translate.ui.components.SoftCard
 fun TranslateScreen(
     vm: AppViewModel,
     onOpenSettings: () -> Unit,
+    onOpenCamera: () -> Unit,
     hasUpdate: Boolean
 ) {
     val settings by vm.settings.collectAsState()
@@ -85,7 +87,7 @@ fun TranslateScreen(
             .padding(horizontal = 20.dp)
     ) {
         Spacer(Modifier.height(18.dp))
-        Header(onOpenSettings = onOpenSettings, hasUpdate = hasUpdate)
+        Header(onOpenSettings = onOpenSettings, onOpenCamera = onOpenCamera, hasUpdate = hasUpdate)
         Spacer(Modifier.height(24.dp))
         LanguageBar(
             source = vm.sourceLanguage,
@@ -185,7 +187,11 @@ fun TranslateScreen(
 enum class PickerTarget { Source, Target }
 
 @Composable
-private fun Header(onOpenSettings: () -> Unit, hasUpdate: Boolean) {
+private fun Header(
+    onOpenSettings: () -> Unit,
+    onOpenCamera: () -> Unit,
+    hasUpdate: Boolean
+) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Box(
             modifier = Modifier
@@ -218,6 +224,11 @@ private fun Header(onOpenSettings: () -> Unit, hasUpdate: Boolean) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
+        IconAction(
+            icon = Icons.Rounded.PhotoCamera,
+            contentDescription = "Camera",
+            onClick = onOpenCamera
+        )
         Box {
             IconAction(
                 icon = Icons.Rounded.Settings,
