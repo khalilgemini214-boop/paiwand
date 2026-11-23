@@ -34,13 +34,6 @@
             </intent-filter>
         </activity>
 
-        <activity
-            android:name=".overlay.TranslatePopupActivity"
-            android:excludeFromRecents="true"
-            android:exported="false"
-            android:launchMode="singleTop"
-            android:theme="@style/Theme.Paiwand.Popup" />
-
         <service
             android:name=".overlay.BubbleService"
             android:exported="false"
