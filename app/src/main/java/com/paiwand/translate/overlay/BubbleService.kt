@@ -11,7 +11,6 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.graphics.Color
 import android.graphics.PixelFormat
-import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.IBinder
@@ -20,7 +19,6 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.FrameLayout
-import android.widget.TextView
 import androidx.core.content.ContextCompat
 import com.paiwand.translate.MainActivity
 import com.paiwand.translate.R
@@ -129,15 +127,15 @@ class BubbleService : Service() {
             contentDescription = "Translate screen"
         }
 
-        val label = TextView(this).apply {
-            text = "پ"
-            setTextColor(Color.WHITE)
-            textSize = 24f
-            gravity = Gravity.CENTER
-            typeface = Typeface.DEFAULT_BOLD
+        val icon = android.widget.ImageView(this).apply {
+            setImageResource(R.drawable.ic_stat_paiwand)
+            scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+            val inset = (17 * density).toInt()
+            setPadding(inset, inset, inset, inset)
+            contentDescription = "Translate screen"
         }
         view.addView(
-            label,
+            icon,
             FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT

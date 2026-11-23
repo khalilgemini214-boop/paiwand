@@ -73,8 +73,21 @@ Change those passwords if you like — just keep them consistent.
 
 Open Paiwand → Settings → Translation engine:
 
-- **API key** — your DeepSeek key (`sk-…`)
-- **API base URL** — `https://api.deepseek.com/v1` (any OpenAI-compatible endpoint works)
+**Option A — Groq (fast, free tier, reliable):**
+
+- **API key** — `gsk_…` from console.groq.com
+- **API base URL** — `https://api.groq.com/openai/v1`
+- **Model** — `openai/gpt-oss-120b`
+
+**Option B — Google Gemini (free tier):**
+
+- **API base URL** — `https://generativelanguage.googleapis.com/v1beta/openai`
+- **Model** — `gemini-3.5-flash-lite` (note: `gemini-3.5-flash` frequently returns
+  503 "currently experiencing high demand"; `-lite` has been serving reliably)
+
+**Option C — DeepSeek (paid, best Urdu quality):**
+
+- **API base URL** — `https://api.deepseek.com/v1`
 - **Model** — `deepseek-chat`
 
 Then type something and hit Translate. **Test connection** verifies key + URL + model with a single

@@ -6,6 +6,11 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -70,17 +75,7 @@ class TranslationEngine(
             .post(json.encodeToString(ChatRequest.serializer(), body).toRequestBody(mediaType))
             .build()
 
-        val raw = try {
-            client.newCall(request).execute().use { response ->
-                val payload = response.body?.string().orEmpty()
-                if (!response.isSuccessful) {
-                    throw TranslationException(describeError(response.code, payload))
-                }
-                payload
-            }
-        } catch (e: IOException) {
-            throw TranslationException("Network problem. Check your connection.")
-        }
+        val raw = execute(request)
 
         val parsed = runCatching {
             json.decodeFromString(ChatResponse.serializer(), raw)
@@ -89,6 +84,38 @@ class TranslationEngine(
         val content = parsed.choices.firstOrNull()?.message?.content?.trim().orEmpty()
         if (content.isBlank()) throw TranslationException("The model returned an empty translation")
         sanitize(content)
+    }
+
+    /**
+     * Runs the call, retrying briefly on 429/5xx. Providers like Gemini return a 503 for
+     * "model overloaded", which is transient often enough to be worth two more attempts.
+     */
+    private fun execute(request: Request): String {
+        var last: TranslationException? = null
+
+        for (attempt in 0..2) {
+            if (attempt > 0) {
+                Thread.sleep(if (attempt == 1) 700L else 1800L)
+            }
+
+            val response = try {
+                client.newCall(request).execute()
+            } catch (e: IOException) {
+                throw TranslationException("Network problem. Check your connection.")
+            }
+
+            response.use {
+                val payload = it.body?.string().orEmpty()
+                if (it.isSuccessful) return payload
+
+                val error = TranslationException(describeError(it.code, payload))
+                val retryable = it.code == 429 || it.code in 500..599
+                if (!retryable || attempt == 2) throw error
+                last = error
+            }
+        }
+
+        throw last ?: TranslationException("Translation failed")
     }
 
     private fun endpoint(base: String): String {
@@ -125,12 +152,38 @@ class TranslationEngine(
         return out
     }
 
-    private fun describeError(code: Int, payload: String): String = when (code) {
-        401, 403 -> "API key rejected. Check it in Settings."
-        402 -> "Your API account has no balance."
-        404 -> "Endpoint not found. Check the API base URL."
-        429 -> "Rate limited. Try again in a moment."
-        in 500..599 -> "Translation service is busy. Try again."
-        else -> "Request failed ($code). ${payload.take(140)}".trim()
+    /**
+     * Providers all shape their errors differently — Gemini even returns a one-element JSON
+     * array. Pull whatever message we can find so the user sees the provider's own words
+     * instead of a vague "service is busy".
+     */
+    private fun providerMessage(payload: String): String? = runCatching {
+        findMessage(json.parseToJsonElement(payload))
+    }.getOrNull()?.trim()?.take(180)?.takeIf { it.isNotEmpty() }
+
+    private fun findMessage(element: JsonElement): String? = when (element) {
+        is JsonObject -> {
+            element["message"]?.jsonPrimitive?.contentOrNull
+                ?: element["error"]?.let { findMessage(it) }
+        }
+
+        is JsonArray -> element.firstOrNull()?.let { findMessage(it) }
+        else -> null
+    }
+
+    private fun describeError(code: Int, payload: String): String {
+        val detail = providerMessage(payload)
+
+        val base = when (code) {
+            400 -> "Request rejected."
+            401, 403 -> "API key rejected. Check it in Settings."
+            402 -> "No balance on this API account."
+            404 -> "Model not found. Check the model name."
+            429 -> "Rate limited. Wait a moment and try again."
+            in 500..599 -> "Provider is overloaded right now."
+            else -> "Request failed ($code)."
+        }
+
+        return if (detail.isNullOrBlank()) base else "$base $detail"
     }
 }
