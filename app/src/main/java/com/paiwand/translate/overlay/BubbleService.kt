@@ -247,11 +247,22 @@ class BubbleService : Service() {
         scope.launch {
             try {
                 val result = QuickTranslator.translate(this@BubbleService, target.text)
-                val done = TranslateAccessibilityService.instance?.replace(field, result.text) == true
+                val outcome = TranslateAccessibilityService.instance
+                    ?.replace(field, result.text)
+                    ?: TranslateAccessibilityService.ReplaceResult.Failed
 
                 toast(
-                    if (done) "Replaced with ${result.target.name}"
-                    else "This app's text field refused the change"
+                    when (outcome) {
+                        TranslateAccessibilityService.ReplaceResult.SetText,
+                        TranslateAccessibilityService.ReplaceResult.SetTextOnParent ->
+                            "Replaced with ${result.target.name}"
+
+                        TranslateAccessibilityService.ReplaceResult.Pasted ->
+                            "Replaced with ${result.target.name} (pasted)"
+
+                        TranslateAccessibilityService.ReplaceResult.Failed ->
+                            "This app's text field refused the change"
+                    }
                 )
             } catch (e: Exception) {
                 toast(e.message ?: "Translation failed")

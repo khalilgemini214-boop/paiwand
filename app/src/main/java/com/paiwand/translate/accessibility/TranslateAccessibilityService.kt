@@ -14,17 +14,19 @@ import android.view.accessibility.AccessibilityNodeInfo
  */
 class TranslateAccessibilityService : AccessibilityService() {
 
-    /**
-     * [editable] is the input field containing the point, if there is one. The field's text
-     * often lives on a child node, so this is resolved by walking the whole chain, not just
-     * the deepest node.
-     */
     data class Target(
         val text: String,
         val node: AccessibilityNodeInfo,
         val editable: AccessibilityNodeInfo?
     ) {
         val isField: Boolean get() = editable != null && text.isNotBlank()
+    }
+
+    enum class ReplaceResult {
+        SetText,
+        SetTextOnParent,
+        Pasted,
+        Failed
     }
 
     override fun onServiceConnected() {
@@ -44,18 +46,29 @@ class TranslateAccessibilityService : AccessibilityService() {
     fun targetAt(x: Int, y: Int): Target? {
         val root = rootForTargeting() ?: return null
 
+        // The user's finger is usually already inside the field they were typing in. Asking the
+        // window who holds input focus is far more reliable than guessing from bounds.
+        val focused = runCatching { root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT) }.getOrNull()
+        if (focused != null && focused.isEditable) {
+            val bounds = Rect()
+            focused.getBoundsInScreen(bounds)
+            val slack = (20 * resources.displayMetrics.density).toInt()
+            bounds.inset(-slack, -slack)
+            val focusedText = focused.text?.toString()?.trim().orEmpty()
+            if (bounds.contains(x, y) && focusedText.isNotBlank()) {
+                return Target(focusedText, focused, focused)
+            }
+        }
+
         val chain = ArrayList<AccessibilityNodeInfo>(8)
         if (!descend(root, x, y, chain, 0)) return null
 
         // Nearest editable ancestor wins: that is the field the user dropped onto.
-        val field = chain.indices.reversed()
-            .map { chain[it] }
-            .firstOrNull { it.isEditable }
-
-        if (field != null) {
-            val fieldText = field.text?.toString()?.trim().orEmpty()
-            if (fieldText.isNotBlank()) {
-                return Target(text = fieldText, node = field, editable = field)
+        for (index in chain.indices.reversed()) {
+            val node = chain[index]
+            if (node.isEditable) {
+                val text = node.text?.toString()?.trim().orEmpty()
+                if (text.isNotBlank()) return Target(text, node, node)
             }
         }
 
@@ -64,18 +77,12 @@ class TranslateAccessibilityService : AccessibilityService() {
             val node = chain[index]
             val text = node.text?.toString()?.trim().orEmpty()
                 .ifBlank { node.contentDescription?.toString()?.trim().orEmpty() }
-            if (text.isNotBlank()) {
-                return Target(text = text, node = node, editable = null)
-            }
+            if (text.isNotBlank()) return Target(text, node, null)
         }
 
         return null
     }
 
-    /**
-     * The bubble itself is one of our windows. If it is the active one, look through the other
-     * interactive windows for the app the user is actually looking at.
-     */
     private fun rootForTargeting(): AccessibilityNodeInfo? {
         val active = rootInActiveWindow
         if (active != null && active.packageName != packageName) return active
@@ -108,31 +115,53 @@ class TranslateAccessibilityService : AccessibilityService() {
         return true
     }
 
-    fun replace(node: AccessibilityNodeInfo, value: String): Boolean {
+    /**
+     * Three escalating attempts, because editors differ wildly:
+     * 1. ACTION_SET_TEXT on the field
+     * 2. ACTION_SET_TEXT on its parent (some custom widgets expose the action there)
+     * 3. select everything, then ACTION_PASTE — WhatsApp and a few others only honour this
+     */
+    fun replace(node: AccessibilityNodeInfo, value: String): ReplaceResult {
         runCatching { node.performAction(AccessibilityNodeInfo.ACTION_FOCUS) }
 
+        if (setText(node, value)) return ReplaceResult.SetText
+
+        val parent = runCatching { node.parent }.getOrNull()
+        if (parent != null && setText(parent, value)) return ReplaceResult.SetTextOnParent
+
+        if (paste(node, value)) return ReplaceResult.Pasted
+
+        return ReplaceResult.Failed
+    }
+
+    private fun setText(node: AccessibilityNodeInfo, value: String): Boolean {
         val arguments = Bundle().apply {
             putCharSequence(
                 AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
                 value
             )
         }
-        val setText = runCatching {
+        return runCatching {
             node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
         }.getOrDefault(false)
-        if (setText) return true
+    }
 
-        // Some editors ignore ACTION_SET_TEXT but still accept a paste.
+    private fun paste(node: AccessibilityNodeInfo, value: String): Boolean {
         val clipboard = getSystemService(ClipboardManager::class.java) ?: return false
         clipboard.setPrimaryClip(ClipData.newPlainText("paiwand", value))
 
-        val selected = runCatching {
-            node.performAction(AccessibilityNodeInfo.ACTION_SELECT)
-        }.getOrDefault(false)
+        val length = node.text?.length ?: 0
+        val selection = Bundle().apply {
+            putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, 0)
+            putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, length)
+        }
+        runCatching {
+            node.performAction(AccessibilityNodeInfo.ACTION_SET_SELECTION, selection)
+        }
 
         return runCatching {
             node.performAction(AccessibilityNodeInfo.ACTION_PASTE)
-        }.getOrDefault(false) || selected
+        }.getOrDefault(false)
     }
 
     companion object {
