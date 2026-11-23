@@ -152,6 +152,29 @@ fun SettingsScreen(
                     text = "Save",
                     enabled = apiKey.isNotBlank()
                 ) { vm.saveEngine(apiKey, apiBase, model) }
+
+                Spacer(Modifier.height(4.dp))
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(
+                        onClick = { vm.testEngine(apiKey, apiBase, model) },
+                        enabled = apiKey.isNotBlank() && !vm.engineTesting
+                    ) {
+                        Text(if (vm.engineTesting) "Testing…" else "Test connection")
+                    }
+                    Spacer(Modifier.weight(1f))
+                }
+
+                vm.engineStatus?.let { status ->
+                    Text(
+                        text = status,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (vm.engineOk) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.error,
+                        maxLines = 4
+                    )
+                }
+
                 Spacer(Modifier.height(10.dp))
                 Text(
                     text = "For personal use keep the key here. Before sharing the app, move it to a small proxy server so it is never shipped inside the APK.",

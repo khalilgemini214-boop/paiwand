@@ -77,7 +77,13 @@ Open Paiwand → Settings → Translation engine:
 - **API base URL** — `https://api.deepseek.com/v1` (any OpenAI-compatible endpoint works)
 - **Model** — `deepseek-chat`
 
-Then type something and hit Translate.
+Then type something and hit Translate. **Test connection** verifies key + URL + model with a single
+word and shows the exact error if something is wrong.
+
+> **Not interchangeable:** an OpenCode / OpenCode Go plan key is a credential for the OpenCode
+> gateway (`opencode-go/deepseek-v4.1-flash`). It is not a DeepSeek platform key and will be
+> rejected by `api.deepseek.com`. Use a key from platform.deepseek.com, or point the base URL at a
+> gateway you are allowed to use from an app.
 
 > **Before sharing the app publicly** move the key to a small proxy (Cloudflare Worker, Supabase
 > edge function). A key inside an APK can be extracted in seconds. The client already supports

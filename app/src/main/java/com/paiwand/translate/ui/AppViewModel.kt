@@ -51,6 +51,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var targetCode by mutableStateOf("ur")
         private set
 
+    var engineTesting by mutableStateOf(false)
+        private set
+    var engineOk by mutableStateOf(false)
+        private set
+    var engineStatus by mutableStateOf<String?>(null)
+        private set
+
     val sourceLanguage: Language get() = Languages.byCode(sourceCode)
     val targetLanguage: Language get() = Languages.byCode(targetCode)
 
@@ -182,6 +189,33 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             settingsStore.setApiBase(apiBase.trim())
             settingsStore.setModel(model.trim())
             toast("Saved")
+        }
+    }
+
+    fun testEngine(apiKey: String, apiBase: String, model: String) {
+        if (engineTesting) return
+        engineTesting = true
+        engineOk = false
+        engineStatus = null
+
+        viewModelScope.launch {
+            try {
+                val output = engine.translate(
+                    text = "Hello",
+                    source = Languages.byCode("en"),
+                    target = Languages.byCode("ur"),
+                    apiKey = apiKey.trim(),
+                    baseUrl = apiBase.trim(),
+                    model = model.trim()
+                )
+                engineOk = true
+                engineStatus = "Connected — “Hello” → “$output”"
+            } catch (e: Exception) {
+                engineOk = false
+                engineStatus = e.message ?: "Connection failed"
+            } finally {
+                engineTesting = false
+            }
         }
     }
 
