@@ -10,6 +10,8 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -85,6 +87,74 @@ class TranslationEngine(
         if (content.isBlank()) throw TranslationException("The model returned an empty translation")
         sanitize(content)
     }
+
+    /**
+     * Same request, but reads the response as it arrives so the first words appear immediately
+     * instead of after a two or three second pause.
+     */
+    suspend fun translateStreaming(
+        text: String,
+        source: Language,
+        target: Language,
+        apiKey: String,
+        baseUrl: String,
+        model: String,
+        onUpdate: (String) -> Unit
+    ): String = withContext(Dispatchers.IO) {
+        if (apiKey.isBlank()) throw TranslationException("Add your API key in Settings")
+
+        val sourceName = if (source.code == "auto") "the detected language" else source.name
+        val body = ChatRequest(
+            model = model.ifBlank { "deepseek-chat" },
+            messages = listOf(
+                ChatMessage("system", systemPrompt(sourceName, target.name)),
+                ChatMessage("user", text)
+            ),
+            stream = true
+        )
+
+        val request = Request.Builder()
+            .url(endpoint(baseUrl))
+            .header("Authorization", "Bearer $apiKey")
+            .header("Accept", "text/event-stream")
+            .post(json.encodeToString(ChatRequest.serializer(), body).toRequestBody(mediaType))
+            .build()
+
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                val payload = response.body?.string().orEmpty()
+                throw TranslationException(describeError(response.code, payload))
+            }
+
+            val stream = response.body?.source()
+                ?: throw TranslationException("Empty response from the server")
+
+            val builder = StringBuilder()
+            while (!stream.exhausted()) {
+                val line = stream.readUtf8Line() ?: break
+                if (!line.startsWith("data:")) continue
+
+                val payload = line.removePrefix("data:").trim()
+                if (payload == "[DONE]") break
+
+                val piece = parseDelta(payload) ?: continue
+                builder.append(piece)
+                onUpdate(builder.toString())
+            }
+
+            val content = builder.toString().trim()
+            if (content.isBlank()) throw TranslationException("The model returned an empty translation")
+            sanitize(content)
+        }
+    }
+
+    private fun parseDelta(payload: String): String? = runCatching {
+        val choices = json.parseToJsonElement(payload).jsonObject["choices"]?.jsonArray
+            ?: return@runCatching null
+        val delta = choices.firstOrNull()?.jsonObject?.get("delta")?.jsonObject
+            ?: return@runCatching null
+        delta["content"]?.jsonPrimitive?.contentOrNull
+    }.getOrNull()
 
     /**
      * Runs the call, retrying briefly on 429/5xx. Providers like Gemini return a 503 for

@@ -109,28 +109,50 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun translate() {
-        val text = input.trim()
+        if (input.isBlank() || busy) return
+        runTranslation(input.trim())
+    }
+
+    /** Used by share, the text selection menu, and anything that arrives with text attached. */
+    fun translateNow(text: String) {
+        if (text.isBlank()) return
+        input = text
+        runTranslation(text.trim())
+    }
+
+    private fun runTranslation(text: String) {
         if (text.isEmpty() || busy) return
+
         error = null
         result = null
-
-        val current = settings.value
-        if (!current.configured) {
-            error = "Add your API key in Settings to start translating."
-            return
-        }
-
         busy = true
+
         viewModelScope.launch {
             try {
-                val output = engine.translate(
+                // Wait for the stored settings: on a share or selection-menu launch this can run
+                // before DataStore has emitted, and an empty key would look like a real failure.
+                val current = settingsStore.flow.first()
+                if (!current.configured) {
+                    error = "Add your API key in Settings to start translating."
+                    return@launch
+                }
+
+                var lastUpdate = 0L
+                val output = engine.translateStreaming(
                     text = text,
                     source = sourceLanguage,
                     target = targetLanguage,
                     apiKey = current.apiKey,
                     baseUrl = current.apiBase,
                     model = current.model
-                )
+                ) { partial ->
+                    val now = android.os.SystemClock.elapsedRealtime()
+                    if (now - lastUpdate > 70) {
+                        lastUpdate = now
+                        viewModelScope.launch { result = partial }
+                    }
+                }
+
                 result = output
                 historyStore.add(
                     historyStore.newItem(

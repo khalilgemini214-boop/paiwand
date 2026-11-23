@@ -93,6 +93,13 @@ class TranslateCard(private val context: Context) {
         container.post { reposition() }
     }
 
+    fun setPartial(text: String) {
+        root?.post {
+            resultView?.setTextColor(onSurface)
+            resultView?.text = text
+        }
+    }
+
     fun setResult(targetLanguage: String, text: String) {
         labelView?.text = targetLanguage.uppercase()
         resultView?.setTextColor(onSurface)

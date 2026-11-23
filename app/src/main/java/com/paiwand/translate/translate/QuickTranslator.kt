@@ -34,4 +34,29 @@ object QuickTranslator {
         )
         return Result(output, route.target)
     }
+
+    suspend fun translateStreaming(
+        context: Context,
+        text: String,
+        onUpdate: (String) -> Unit
+    ): Result {
+        val app = context.applicationContext as PaiwandApp
+        val settings = app.settings.flow.first()
+
+        if (!settings.configured) {
+            throw TranslationException("Add your API key in Settings first.")
+        }
+
+        val route = Direction.routeFor(text, settings)
+        val output = engine.translateStreaming(
+            text = text,
+            source = route.source,
+            target = route.target,
+            apiKey = settings.apiKey,
+            baseUrl = settings.apiBase,
+            model = settings.model,
+            onUpdate = onUpdate
+        )
+        return Result(output, route.target)
+    }
 }

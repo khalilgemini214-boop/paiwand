@@ -69,9 +69,16 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun readSharedText(intent: Intent?) {
-        if (intent?.action == Intent.ACTION_SEND && intent.type?.startsWith("text/") == true) {
-            val shared = intent.getStringExtra(Intent.EXTRA_TEXT)
-            if (!shared.isNullOrBlank()) vm.onInputChange(shared.trim())
+        when (intent?.action) {
+            Intent.ACTION_SEND -> {
+                val shared = intent.getStringExtra(Intent.EXTRA_TEXT)
+                if (!shared.isNullOrBlank()) vm.translateNow(shared.trim())
+            }
+
+            Intent.ACTION_PROCESS_TEXT -> {
+                val selected = intent.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT)?.toString()
+                if (!selected.isNullOrBlank()) vm.translateNow(selected.trim())
+            }
         }
     }
 }

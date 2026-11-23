@@ -41,6 +41,8 @@ class BubbleService : Service() {
     private var bubble: View? = null
     private var capturing = false
     private var card: TranslateCard? = null
+    private var bubbleCenterX = 0
+    private var bubbleCenterY = 0
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -69,6 +71,13 @@ class BubbleService : Service() {
 
                 showBubble()
             }
+
+            ACTION_CLIPBOARD -> {
+                val text = intent.getStringExtra(EXTRA_TEXT).orEmpty()
+                if (text.isNotBlank()) {
+                    translateIntoCard(text, bubbleCenterX, bubbleCenterY)
+                }
+            }
         }
         return START_NOT_STICKY
     }
@@ -95,8 +104,9 @@ class BubbleService : Service() {
         val notification: Notification = Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_paiwand)
             .setContentTitle("Paiwand is ready")
-            .setContentText("Tap for the whole screen, drag onto a word to translate just that")
+            .setContentText("Tap for the screen · drag onto a word · hold for clipboard")
             .setContentIntent(open)
+            .addAction(0, "Translate clipboard", clipboardAction())
             .setOngoing(true)
             .build()
 
@@ -110,6 +120,14 @@ class BubbleService : Service() {
             startForeground(NOTIFICATION_ID, notification)
         }
     }
+
+    private fun clipboardAction(): PendingIntent = PendingIntent.getActivity(
+        this,
+        1,
+        Intent(this, ClipboardBridgeActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+    )
 
     private fun showBubble() {
         if (bubble != null) return
@@ -194,9 +212,14 @@ class BubbleService : Service() {
                     val metrics = resources.displayMetrics
                     val centerX = (params.x + size / 2).coerceIn(0, metrics.widthPixels - 1)
                     val centerY = (params.y + size / 2).coerceIn(0, metrics.heightPixels - 1)
+                    bubbleCenterX = centerX
+                    bubbleCenterY = centerY
 
+                    val heldFor = event.eventTime - event.downTime
                     if (moved) {
                         handleDrop(centerX, centerY)
+                    } else if (heldFor > 450) {
+                        translateClipboard()
                     } else {
                         translateWholeScreen(centerX, centerY)
                     }
@@ -211,6 +234,8 @@ class BubbleService : Service() {
 
         windowManager = manager
         bubble = view
+        bubbleCenterX = params.x + size / 2
+        bubbleCenterY = params.y + size / 2
     }
 
     /**
@@ -272,15 +297,32 @@ class BubbleService : Service() {
 
     private fun translateIntoCard(source: String, x: Int, y: Int) {
         card?.dismiss()
-        card = TranslateCard(this).also { it.show(source, x, y) }
+        val active = TranslateCard(this).also { it.show(source, x, y) }
+        card = active
 
         scope.launch {
             try {
-                val result = QuickTranslator.translate(this@BubbleService, source)
-                card?.setResult(result.target.name, result.text)
+                var lastUpdate = 0L
+                val result = QuickTranslator.translateStreaming(this@BubbleService, source) { partial ->
+                    val now = android.os.SystemClock.elapsedRealtime()
+                    if (now - lastUpdate > 70) {
+                        lastUpdate = now
+                        active.setPartial(partial)
+                    }
+                }
+                active.setResult(result.target.name, result.text)
             } catch (e: Exception) {
-                card?.setError(e.message ?: "Translation failed")
+                active.setError(e.message ?: "Translation failed")
             }
+        }
+    }
+
+    private fun translateClipboard() {
+        runCatching {
+            startActivity(
+                Intent(this, ClipboardBridgeActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
         }
     }
 
@@ -318,11 +360,12 @@ class BubbleService : Service() {
         scope.launch {
             try {
                 val bitmap = captureWithoutBubble()
-                val text = if (bitmap != null) Ocr.readAt(bitmap, x, y) else ""
+                val tolerance = (10 * resources.displayMetrics.density).toInt()
+                val text = if (bitmap != null) Ocr.readAt(bitmap, x, y, tolerance) else ""
                 bitmap?.recycle()
 
                 if (text.isBlank()) {
-                    toast("No text under the bubble")
+                    toast("No text here")
                 } else {
                     translateIntoCard(text, x, y)
                 }
@@ -360,8 +403,10 @@ class BubbleService : Service() {
         private const val NOTIFICATION_ID = 4102
         private const val ACTION_START = "com.paiwand.translate.action.START_BUBBLE"
         private const val ACTION_STOP = "com.paiwand.translate.action.STOP_BUBBLE"
+        private const val ACTION_CLIPBOARD = "com.paiwand.translate.action.CLIPBOARD"
         private const val EXTRA_RESULT_CODE = "result_code"
         private const val EXTRA_RESULT_DATA = "result_data"
+        private const val EXTRA_TEXT = "extra_text"
 
         fun start(context: Context, resultCode: Int, data: Intent) {
             val intent = Intent(context, BubbleService::class.java).apply {
@@ -370,6 +415,14 @@ class BubbleService : Service() {
                 putExtra(EXTRA_RESULT_DATA, data)
             }
             ContextCompat.startForegroundService(context, intent)
+        }
+
+        fun showClipboard(context: Context, text: String) {
+            val intent = Intent(context, BubbleService::class.java).apply {
+                action = ACTION_CLIPBOARD
+                putExtra(EXTRA_TEXT, text)
+            }
+            context.startService(intent)
         }
 
         fun stop(context: Context) {
