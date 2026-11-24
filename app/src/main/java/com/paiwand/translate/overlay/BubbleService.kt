@@ -1,5 +1,6 @@
 package com.paiwand.translate.overlay
 
+import android.animation.ValueAnimator
 import android.app.Activity
 import android.app.Notification
 import android.app.NotificationChannel
@@ -18,20 +19,24 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
+import android.view.animation.DecelerateInterpolator
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.Toast
 import androidx.core.content.ContextCompat
 import com.paiwand.translate.MainActivity
+import com.paiwand.translate.PaiwandApp
 import com.paiwand.translate.R
 import com.paiwand.translate.accessibility.TranslateAccessibilityService
 import com.paiwand.translate.translate.QuickTranslator
 import kotlin.math.abs
+import kotlin.math.max
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 class BubbleService : Service() {
@@ -39,10 +44,14 @@ class BubbleService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var windowManager: WindowManager? = null
     private var bubble: View? = null
-    private var capturing = false
-    private var card: TranslateCard? = null
+    private var bubbleParams: WindowManager.LayoutParams? = null
+    private var bubbleSize = 0
     private var bubbleCenterX = 0
     private var bubbleCenterY = 0
+
+    private var capturing = false
+    private var card: TranslateCard? = null
+    private var menu: BubbleMenu? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -104,7 +113,7 @@ class BubbleService : Service() {
         val notification: Notification = Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_paiwand)
             .setContentTitle("Paiwand is ready")
-            .setContentText("Tap for the screen · drag onto a word · hold for clipboard")
+            .setContentText("Tap for options · drag onto a word · hold for clipboard")
             .setContentIntent(open)
             .addAction(0, "Translate clipboard", clipboardAction())
             .setOngoing(true)
@@ -124,8 +133,7 @@ class BubbleService : Service() {
     private fun clipboardAction(): PendingIntent = PendingIntent.getActivity(
         this,
         1,
-        Intent(this, ClipboardBridgeActivity::class.java)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+        Intent(this, ClipboardBridgeActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
     )
 
@@ -135,6 +143,7 @@ class BubbleService : Service() {
         val manager = getSystemService(WindowManager::class.java) ?: return
         val density = resources.displayMetrics.density
         val size = (48 * density).toInt()
+        bubbleSize = size
 
         val shape = GradientDrawable(
             GradientDrawable.Orientation.TL_BR,
@@ -164,6 +173,7 @@ class BubbleService : Service() {
             )
         )
 
+        // The bubble lives on an edge, never floating in the middle of the screen.
         val params = WindowManager.LayoutParams(
             size,
             size,
@@ -173,7 +183,7 @@ class BubbleService : Service() {
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = (4 * density).toInt()
+            x = 0
             y = resources.displayMetrics.heightPixels / 3
         }
 
@@ -184,7 +194,7 @@ class BubbleService : Service() {
         var moved = false
 
         view.setOnTouchListener { _, event ->
-            when (event.action) {
+            when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     startX = params.x
                     startY = params.y
@@ -216,12 +226,10 @@ class BubbleService : Service() {
                     bubbleCenterY = centerY
 
                     val heldFor = event.eventTime - event.downTime
-                    if (moved) {
-                        handleDrop(centerX, centerY)
-                    } else if (heldFor > 450) {
-                        translateClipboard()
-                    } else {
-                        translateWholeScreen(centerX, centerY)
+                    when {
+                        moved -> handleDrop(centerX, centerY)
+                        heldFor > 450 -> translateClipboard()
+                        else -> openMenu()
                     }
                     true
                 }
@@ -234,18 +242,93 @@ class BubbleService : Service() {
 
         windowManager = manager
         bubble = view
+        bubbleParams = params
         bubbleCenterX = params.x + size / 2
         bubbleCenterY = params.y + size / 2
     }
 
     /**
-     * Drag-release: the element under the bubble wins. Text fields get the translation written
-     * straight into them; anything else opens the floating card.
+     * Returns the bubble to the nearest edge, keeping its vertical position. Runs the animation
+     * from wherever the drag ended.
      */
+    private fun snapToEdge() {
+        val view = bubble ?: return
+        val params = bubbleParams ?: return
+        val metrics = resources.displayMetrics
+
+        val targetX = if (params.x + bubbleSize / 2 < metrics.widthPixels / 2) {
+            0
+        } else {
+            metrics.widthPixels - bubbleSize
+        }
+        val targetY = params.y.coerceIn(0, max(0, metrics.heightPixels - bubbleSize))
+
+        val startX = params.x
+        val startY = params.y
+
+        ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 200
+            interpolator = DecelerateInterpolator()
+            addUpdateListener { animator ->
+                val fraction = animator.animatedValue as Float
+                params.x = (startX + (targetX - startX) * fraction).toInt()
+                params.y = (startY + (targetY - startY) * fraction).toInt()
+                runCatching { windowManager?.updateViewLayout(view, params) }
+            }
+            start()
+        }
+
+        bubbleCenterX = targetX + bubbleSize / 2
+        bubbleCenterY = targetY + bubbleSize / 2
+    }
+
+    private fun openMenu() {
+        val current = menu
+        if (current != null && current.isShowing) {
+            closeMenu()
+            return
+        }
+
+        bubble?.visibility = View.GONE
+
+        scope.launch {
+            val settings = (application as PaiwandApp).settings.flow.first()
+            val panel = BubbleMenu(
+                context = this@BubbleService,
+                selected = settings.targetLang,
+                onSelect = { code -> selectLanguage(code) },
+                onTranslateScreen = { translateScreenFromMenu() },
+                onClose = { closeMenu() }
+            )
+            panel.show(bubbleCenterX, bubbleCenterY)
+            menu = panel
+        }
+    }
+
+    private fun closeMenu() {
+        menu?.dismiss()
+        menu = null
+        bubble?.visibility = View.VISIBLE
+    }
+
+    private fun selectLanguage(code: String) {
+        scope.launch {
+            val store = (application as PaiwandApp).settings
+            val settings = store.flow.first()
+            store.setLanguages(settings.sourceLang, code)
+        }
+    }
+
+    private fun translateScreenFromMenu() {
+        closeMenu()
+        translateWholeScreen(bubbleCenterX, bubbleCenterY)
+    }
+
     private fun handleDrop(x: Int, y: Int) {
         val service = TranslateAccessibilityService.instance
 
         if (service == null) {
+            snapToEdge()
             toast("Enable accessibility to translate single words")
             translateRegionAt(x, y)
             return
@@ -254,15 +337,18 @@ class BubbleService : Service() {
         val target = runCatching { service.targetAt(x, y) }.getOrNull()
 
         if (target == null) {
+            snapToEdge()
             translateRegionAt(x, y)
             return
         }
 
         if (target.isField) {
+            snapToEdge()
             replaceInPlace(target)
             return
         }
 
+        snapToEdge()
         translateIntoCard(target.text, x, y)
     }
 
@@ -317,16 +403,6 @@ class BubbleService : Service() {
         }
     }
 
-    private fun translateClipboard() {
-        runCatching {
-            startActivity(
-                Intent(this, ClipboardBridgeActivity::class.java)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            )
-        }
-    }
-
-    /** Whole screen on a plain tap. */
     private fun translateWholeScreen(x: Int, y: Int) {
         if (capturing) return
         capturing = true
@@ -352,7 +428,7 @@ class BubbleService : Service() {
         }
     }
 
-    /** Fallback when the app hides its accessibility tree: OCR just the block under the point. */
+    /** A miss stays silent — the bubble simply returns to its edge. */
     private fun translateRegionAt(x: Int, y: Int) {
         if (capturing) return
         capturing = true
@@ -360,13 +436,11 @@ class BubbleService : Service() {
         scope.launch {
             try {
                 val bitmap = captureWithoutBubble()
-                val tolerance = (10 * resources.displayMetrics.density).toInt()
+                val tolerance = (24 * resources.displayMetrics.density).toInt()
                 val text = if (bitmap != null) Ocr.readAt(bitmap, x, y, tolerance) else ""
                 bitmap?.recycle()
 
-                if (text.isBlank()) {
-                    toast("No text here")
-                } else {
+                if (text.isNotBlank()) {
                     translateIntoCard(text, x, y)
                 }
             } finally {
@@ -383,6 +457,15 @@ class BubbleService : Service() {
         return bitmap
     }
 
+    private fun translateClipboard() {
+        runCatching {
+            startActivity(
+                Intent(this, ClipboardBridgeActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+        }
+    }
+
     private fun toast(message: String) {
         Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
     }
@@ -390,6 +473,8 @@ class BubbleService : Service() {
     override fun onDestroy() {
         card?.dismiss()
         card = null
+        menu?.dismiss()
+        menu = null
         bubble?.let { view -> runCatching { windowManager?.removeView(view) } }
         bubble = null
         windowManager = null

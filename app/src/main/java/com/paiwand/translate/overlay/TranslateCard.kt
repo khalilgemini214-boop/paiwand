@@ -29,6 +29,8 @@ class TranslateCard(private val context: Context) {
 
     private var root: LinearLayout? = null
     private var params: WindowManager.LayoutParams? = null
+    private var headerView: View? = null
+    private var userMoved = false
     private var anchorX = 0
     private var anchorY = 0
 
@@ -90,6 +92,10 @@ class TranslateCard(private val context: Context) {
         root = container
         params = layout
 
+        headerView?.let { header ->
+            OverlayDrag.attach(header, windowManager, layout) { userMoved = true }
+        }
+
         container.post { reposition() }
     }
 
@@ -121,6 +127,7 @@ class TranslateCard(private val context: Context) {
         root?.let { runCatching { windowManager?.removeView(it) } }
         root = null
         params = null
+        headerView = null
     }
 
     /**
@@ -128,6 +135,8 @@ class TranslateCard(private val context: Context) {
      * drop happened near the bottom edge.
      */
     private fun reposition() {
+        if (userMoved) return
+
         val container = root ?: return
         val layout = params ?: return
         val screenHeight = context.resources.displayMetrics.heightPixels
@@ -194,6 +203,8 @@ class TranslateCard(private val context: Context) {
             setOnClickListener { dismiss() }
         }
         header.addView(close)
+
+        headerView = header
 
         container.addView(header)
 
